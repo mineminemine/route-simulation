@@ -696,7 +696,7 @@ export default function RaceSimulator() {
   return (
     <div className="flex h-screen w-full overflow-hidden bg-slate-900 text-white">
       {/* Sidebar Controls */}
-      <div className="z-30 flex w-80 flex-col gap-4 overflow-y-auto bg-slate-800 p-4 shadow-xl">
+      <div className="scrollbar-thin scrollbar-thumb-slate-500 scrollbar-track-slate-800 scrollbar-gutter-stable z-30 flex w-80 flex-col gap-4 overflow-y-auto bg-slate-800 p-4 shadow-xl">
         <h1 className="text-xl font-bold text-slate-100">Race Simulator</h1>
 
         {/* Upload GPX */}
