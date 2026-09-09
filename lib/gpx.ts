@@ -8,6 +8,11 @@ export interface RoutePoint {
   cumulativeEffortKm: number;
 }
 
+const ASCENT_EQUIVALENT_DISTANCE = 8;
+const DESCENT_EQUIVALENT_DISTANCE = 2.78;
+const MODERATE_DESCENT_MIN_GRADE = Math.tan((5 * Math.PI) / 180);
+const STEEP_DESCENT_MIN_GRADE = Math.tan((12 * Math.PI) / 180);
+
 // Haversine formula to compute distance between two lat/lng points in km
 function haversineDistance(
   coord1: [number, number],
@@ -62,12 +67,21 @@ export function parseAndNormalizeGPX(xmlText: string): RoutePoint[] {
     const dist = haversineDistance([prev[0], prev[1]], [curr[0], curr[1]]);
     totalDist += dist;
     const elevationChangeM = (curr[2] ?? 0) - (prev[2] ?? 0);
+    const elevationChangeKm = elevationChangeM / 1000;
     const grade = dist > 0 ? elevationChangeM / (dist * 1000) : 0;
-    const terrainFactor = Math.min(
-      1.8,
-      1 + Math.max(0, grade) * 2.5 + Math.max(0, -grade) * 0.5,
-    );
-    totalEffort += dist * terrainFactor;
+    let effortDistance = dist;
+
+    if (elevationChangeM > 0) {
+      effortDistance += elevationChangeKm * ASCENT_EQUIVALENT_DISTANCE;
+    } else if (grade <= -STEEP_DESCENT_MIN_GRADE) {
+      effortDistance +=
+        Math.abs(elevationChangeKm) * DESCENT_EQUIVALENT_DISTANCE;
+    } else if (grade <= -MODERATE_DESCENT_MIN_GRADE) {
+      effortDistance -=
+        Math.abs(elevationChangeKm) * DESCENT_EQUIVALENT_DISTANCE;
+    }
+
+    totalEffort += Math.max(0, effortDistance);
     routePoints.push({
       lat: curr[1],
       lng: curr[0],

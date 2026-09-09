@@ -11,6 +11,8 @@ interface Runner {
   speedKmH: number; // Simulated pace
 }
 
+type Activity = "walking" | "running" | "cycling";
+
 interface RaceCategory {
   id: string;
   name: string;
@@ -19,7 +21,7 @@ interface RaceCategory {
   distanceKm: number;
   startDateTime: string;
   cutoffMins: number;
-  terrainType: "road" | "mixed" | "trail";
+  activity: Activity;
   color: string;
   runners: Runner[];
 }
@@ -125,6 +127,16 @@ function toDateTimeInputValue(date: Date): string {
     .slice(0, 16);
 }
 
+function formatCategoryEndTime(category: RaceCategory): string {
+  const startMs = Date.parse(category.startDateTime);
+  if (!Number.isFinite(startMs)) return "Unavailable";
+
+  return new Date(startMs + category.cutoffMins * 60 * 1000).toLocaleString(
+    undefined,
+    { dateStyle: "medium", timeStyle: "short" },
+  );
+}
+
 function getEventStartMs(categories: RaceCategory[]): number {
   const startTimes = categories
     .map((category) => Date.parse(category.startDateTime))
@@ -183,6 +195,12 @@ interface PaceGroup {
   maxPaceMinPerKm: number;
 }
 
+interface SpeedGroup {
+  weight: number;
+  minSpeedKmH: number;
+  maxSpeedKmH: number;
+}
+
 const paceGroups: PaceGroup[] = [
   { weight: 0.15, minPaceMinPerKm: 6.5, maxPaceMinPerKm: 8 },
   { weight: 0.6, minPaceMinPerKm: 5, maxPaceMinPerKm: 6 },
@@ -190,30 +208,67 @@ const paceGroups: PaceGroup[] = [
   { weight: 0.05, minPaceMinPerKm: 3.3, maxPaceMinPerKm: 4 },
 ];
 
+const activitySpeedGroups: Record<
+  Exclude<Activity, "running">,
+  SpeedGroup[]
+> = {
+  walking: [
+    { weight: 0.2, minSpeedKmH: 3.5, maxSpeedKmH: 4.5 },
+    { weight: 0.65, minSpeedKmH: 4.5, maxSpeedKmH: 5.5 },
+    { weight: 0.15, minSpeedKmH: 5.5, maxSpeedKmH: 6.5 },
+  ],
+  cycling: [
+    { weight: 0.15, minSpeedKmH: 16, maxSpeedKmH: 20 },
+    { weight: 0.65, minSpeedKmH: 20, maxSpeedKmH: 26 },
+    { weight: 0.2, minSpeedKmH: 26, maxSpeedKmH: 32 },
+  ],
+};
+
+const activityLabels: Record<Activity, string> = {
+  walking: "Walking",
+  running: "Running",
+  cycling: "Cycling",
+};
+
 function generateRunners(
   numRunners: number,
   distanceKm: number,
-  terrainType: RaceCategory["terrainType"] = "road",
+  activity: Activity = "running",
 ): Runner[] {
   const distanceFatigue =
     distanceKm > 10 ? 1 + 0.12 * Math.log(distanceKm / 10) : 1;
 
   return Array.from({ length: numRunners }, (_, id) => {
     let selection = Math.random();
-    const group =
-      paceGroups.find((paceGroup) => {
-        selection -= paceGroup.weight;
-        return selection <= 0;
-      }) ?? paceGroups[paceGroups.length - 1];
-    const paceMinPerKm =
-      (group.minPaceMinPerKm +
-        Math.random() * (group.maxPaceMinPerKm - group.minPaceMinPerKm)) *
-      distanceFatigue *
-      (terrainType === "trail" ? 1.18 : terrainType === "mixed" ? 1.09 : 1);
+    let speedKmH: number;
+
+    if (activity === "running") {
+      const group =
+        paceGroups.find((paceGroup) => {
+          selection -= paceGroup.weight;
+          return selection <= 0;
+        }) ?? paceGroups[paceGroups.length - 1];
+      const paceMinPerKm =
+        (group.minPaceMinPerKm +
+          Math.random() * (group.maxPaceMinPerKm - group.minPaceMinPerKm)) *
+        distanceFatigue;
+      speedKmH = 60 / paceMinPerKm;
+    } else {
+      const groups = activitySpeedGroups[activity];
+      const group =
+        groups.find((speedGroup) => {
+          selection -= speedGroup.weight;
+          return selection <= 0;
+        }) ?? groups[groups.length - 1];
+      speedKmH =
+        (group.minSpeedKmH +
+          Math.random() * (group.maxSpeedKmH - group.minSpeedKmH)) /
+        distanceFatigue;
+    }
 
     return {
       id,
-      speedKmH: 60 / paceMinPerKm,
+      speedKmH,
     };
   });
 }
@@ -283,6 +338,7 @@ export default function RaceSimulator() {
   const [simTimeSec, setSimTimeSec] = useState<number>(0);
   const [isPlaying, setIsPlaying] = useState<boolean>(false);
   const [simSpeedMultiplier, setSimSpeedMultiplier] = useState<number>(60); // 60x speed
+  const [isDraggingFiles, setIsDraggingFiles] = useState<boolean>(false);
 
   // Initialize MapLibre
   useEffect(() => {
@@ -390,8 +446,7 @@ export default function RaceSimulator() {
   }, [categories]);
 
   // Handle GPX File Upload
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(e.target.files ?? []);
+  const processFiles = async (files: File[]) => {
     if (files.length === 0) return;
 
     const parsedCategories = await Promise.all(
@@ -408,9 +463,9 @@ export default function RaceSimulator() {
           distanceKm,
           startDateTime: toDateTimeInputValue(new Date()),
           cutoffMins: 180,
-          terrainType: "road",
+          activity: "running",
           color: categoryColors[index % categoryColors.length],
-          runners: generateRunners(numRunners, distanceKm, "road"),
+          runners: generateRunners(numRunners, distanceKm, "running"),
         } satisfies RaceCategory;
       }),
     );
@@ -426,6 +481,10 @@ export default function RaceSimulator() {
     setCategories((current) => [...current, ...validCategories]);
     setSimTimeSec(0);
     setIsPlaying(false);
+  };
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    await processFiles(Array.from(e.target.files ?? []));
     e.target.value = "";
   };
 
@@ -643,9 +702,37 @@ export default function RaceSimulator() {
         {/* Upload GPX */}
         <div className="flex flex-col gap-2">
           <label className="text-sm text-slate-400">Upload GPX Route</label>
-          <label className="flex items-center justify-center gap-2 border-2 border-dashed border-slate-600 rounded-lg p-3 cursor-pointer hover:border-blue-500 transition-colors">
+          <label
+            onDragEnter={(e) => {
+              e.preventDefault();
+              setIsDraggingFiles(true);
+            }}
+            onDragOver={(e) => {
+              e.preventDefault();
+              e.dataTransfer.dropEffect = "copy";
+              setIsDraggingFiles(true);
+            }}
+            onDragLeave={(e) => {
+              e.preventDefault();
+              setIsDraggingFiles(false);
+            }}
+            onDrop={(e) => {
+              e.preventDefault();
+              setIsDraggingFiles(false);
+              void processFiles(Array.from(e.dataTransfer.files));
+            }}
+            className={`flex cursor-pointer items-center justify-center gap-2 rounded-lg border-2 border-dashed p-3 transition-colors ${
+              isDraggingFiles
+                ? "border-blue-400 bg-blue-500/10 text-blue-200"
+                : "border-slate-600 hover:border-blue-500"
+            }`}
+          >
             <Upload size={18} />
-            <span className="text-sm">Choose GPX File</span>
+            <span className="text-sm">
+              {isDraggingFiles
+                ? "Drop GPX files here"
+                : "Choose or drop GPX files"}
+            </span>
             <input
               type="file"
               accept=".gpx"
@@ -747,23 +834,22 @@ export default function RaceSimulator() {
                   ` · ${getCategoryDnfCount(category)} DNF`}
               </p>
               <div className="grid grid-cols-2 gap-2">
-                <label className="text-xs text-slate-400">
-                  Terrain
+                <label className="col-span-2 text-xs text-slate-400">
+                  Activity
                   <select
-                    value={category.terrainType}
+                    value={category.activity}
                     onChange={(e) => {
-                      const terrainType = e.target
-                        .value as RaceCategory["terrainType"];
+                      const activity = e.target.value as Activity;
                       setCategories((current) =>
                         current.map((item) =>
                           item.id === category.id
                             ? {
                                 ...item,
-                                terrainType,
+                                activity,
                                 runners: generateRunners(
                                   item.runners.length,
                                   item.distanceKm,
-                                  terrainType,
+                                  activity,
                                 ),
                               }
                             : item,
@@ -772,9 +858,13 @@ export default function RaceSimulator() {
                     }}
                     className="mt-1 w-full rounded bg-slate-600 p-1.5 text-sm text-white"
                   >
-                    <option value="road">Road</option>
-                    <option value="mixed">Mixed</option>
-                    <option value="trail">Trail</option>
+                    {(Object.keys(activityLabels) as Activity[]).map(
+                      (activity) => (
+                        <option key={activity} value={activity}>
+                          {activityLabels[activity]}
+                        </option>
+                      ),
+                    )}
                   </select>
                 </label>
                 <label className="col-span-2 text-xs text-slate-400">
@@ -812,7 +902,7 @@ export default function RaceSimulator() {
                                 runners: generateRunners(
                                   Math.max(1, Number(e.target.value)),
                                   item.distanceKm,
-                                  item.terrainType,
+                                  item.activity,
                                 ),
                               }
                             : item,
@@ -843,6 +933,12 @@ export default function RaceSimulator() {
                     className="mt-1 w-full rounded bg-slate-600 p-1.5 text-sm text-white"
                   />
                 </label>
+                <div className="col-span-2 text-xs text-slate-400">
+                  End time
+                  <p className="mt-1 rounded bg-slate-600 p-1.5 text-sm text-slate-100">
+                    {formatCategoryEndTime(category)}
+                  </p>
+                </div>
               </div>
             </div>
           ))}
