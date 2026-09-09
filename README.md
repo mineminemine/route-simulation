@@ -61,6 +61,25 @@ pnpm start
 pnpm lint
 ```
 
+## Deploying to GitHub Pages
+
+The repository includes a GitHub Actions workflow at `.github/workflows/deploy-pages.yml`. It builds the app as a static export and deploys the generated `out/` directory to GitHub Pages whenever changes are pushed to `main`.
+
+To enable it in GitHub:
+
+1. Open the repository's **Settings**.
+2. Go to **Pages**.
+3. Set **Source** to **GitHub Actions**.
+4. Push to `main` or run the **Deploy to GitHub Pages** workflow manually.
+
+For this repository, the project site will be available at:
+
+```text
+https://mineminemine.github.io/route-simulation/
+```
+
+The build automatically uses the repository name as the URL base path in GitHub Actions. Local development continues to use `http://localhost:3000/`. A custom base path can be supplied with the `PAGES_BASE_PATH` environment variable.
+
 ## Project Structure
 
 ```text
