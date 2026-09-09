@@ -12,6 +12,33 @@ Route Simulation is a browser-based race simulator built with Next.js. Upload on
 - View route distance, elevation gain/loss, fastest and slowest estimated times, and DNFs.
 - Use independent start times and cutoff times for each category.
 
+New category cutoffs are estimated from route distance using these reference
+points:
+
+| Distance | Default cutoff |
+| --- | ---: |
+| 5 km | 1 hour |
+| 10 km | 1 hour 30 minutes |
+| 21.1 km (half marathon) | 3 hours |
+| 42 km | 6 hours |
+| 50 km | 16 hours |
+| 70 km | 23 hours |
+| 160.934 km (100 miles) | 36 hours |
+
+Distances between the reference points are interpolated. The resulting cutoff
+is an editable default, so each category can still be adjusted manually.
+
+## Simulation Speed
+
+The simulation speed controls how quickly simulated time advances while the
+simulation is playing:
+
+- `1x`: one real second equals one simulated second.
+- `60x`: one real second equals one simulated minute.
+- `300x`: one real second equals five simulated minutes.
+
+The control ranges from `1x` to `300x`, with a default of `60x`.
+
 ## Timing Model
 
 GPX tracks are normalized into route points containing coordinates, distance, elevation, and cumulative effort distance.
@@ -101,3 +128,4 @@ public/                    Static assets
 - A category's cutoff applies only to that category's participants.
 - The playback timeline is shared, and runs until the latest category endpoint.
 - Map tiles are provided by OpenStreetMap and displayed through MapLibre GL.
+- An internet connection is required to load the OpenStreetMap map tiles.

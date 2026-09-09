@@ -28,6 +28,16 @@ interface RaceCategory {
 
 const categoryColors = ["#FF1744", "#2563EB", "#16A34A", "#D97706", "#9333EA"];
 
+const cutoffReferencePoints = [
+  { distanceKm: 5, cutoffMins: 60 },
+  { distanceKm: 10, cutoffMins: 90 },
+  { distanceKm: 21.1, cutoffMins: 180 },
+  { distanceKm: 42, cutoffMins: 360 },
+  { distanceKm: 50, cutoffMins: 960 },
+  { distanceKm: 70, cutoffMins: 1380 },
+  { distanceKm: 160.934, cutoffMins: 2160 },
+];
+
 function formatDuration(totalSeconds: number): string {
   const hours = Math.floor(totalSeconds / 3600);
   const minutes = Math.floor((totalSeconds % 3600) / 60);
@@ -135,6 +145,31 @@ function formatCategoryEndTime(category: RaceCategory): string {
     undefined,
     { dateStyle: "medium", timeStyle: "short" },
   );
+}
+
+function getDefaultCutoffMins(distanceKm: number): number {
+  const firstPoint = cutoffReferencePoints[0];
+  const lastPoint = cutoffReferencePoints[cutoffReferencePoints.length - 1];
+  const referencePoints =
+    distanceKm <= firstPoint.distanceKm
+      ? [{ distanceKm: 0, cutoffMins: 60 }, firstPoint]
+      : distanceKm >= lastPoint.distanceKm
+        ? [firstPoint, lastPoint]
+        : cutoffReferencePoints;
+
+  const upperIndex = referencePoints.findIndex(
+    (point) => distanceKm <= point.distanceKm,
+  );
+  const upperPoint = referencePoints[Math.max(1, upperIndex)];
+  const lowerPoint = referencePoints[Math.max(0, upperIndex - 1)];
+  const distanceRatio =
+    (distanceKm - lowerPoint.distanceKm) /
+    (upperPoint.distanceKm - lowerPoint.distanceKm);
+  const interpolatedCutoff =
+    lowerPoint.cutoffMins +
+    (upperPoint.cutoffMins - lowerPoint.cutoffMins) * distanceRatio;
+
+  return Math.max(60, Math.round(interpolatedCutoff));
 }
 
 function getEventStartMs(categories: RaceCategory[]): number {
@@ -462,7 +497,7 @@ export default function RaceSimulator() {
           route: parsedPoints,
           distanceKm,
           startDateTime: toDateTimeInputValue(new Date()),
-          cutoffMins: 180,
+          cutoffMins: getDefaultCutoffMins(distanceKm),
           activity: "running",
           color: categoryColors[index % categoryColors.length],
           runners: generateRunners(numRunners, distanceKm, "running"),
